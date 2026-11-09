@@ -17,5 +17,5 @@ Créer un fichier `.env` à la racine du projet (il est exclu de Git) avec **une
     ANTHROPIC_API_KEY=sk-ant-...   # https://console.anthropic.com (nécessite aussi : pip install anthropic)
 
 Si les deux sont présentes, Claude est utilisé en priorité et Gemini sert de secours.
-Modèles par défaut : `gemini-3.8-flash` (`GEMINI_MODEL` pour changer) et `claude-opus-5-5` (`CLAUDE_MODEL`).
+Modèles par défaut : `gemini-3.5-flash-lite` (`GEMINI_MODEL` pour en essayer un autre, Flash-Lite reste le repli) et `claude-opus-5-5` (`CLAUDE_MODEL`).
 Pas besoin de redémarrer le serveur : cliquer sur « Actualiser » suffit.

@@ -268,33 +268,34 @@ def analyse_ia(faits: dict, actus: list[dict]) -> dict | None:
 
 
 def analyse_gemini(faits: dict, actus: list[dict]) -> dict | None:
-    model = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    # Modèle choisi (GEMINI_MODEL) d'abord, puis repli sur Flash-Lite, rapide et disponible en offre gratuite
+    modeles = [m for m in (os.environ.get("GEMINI_MODEL"), "gemini-3.5-flash-lite") if m]
     corps = json.dumps({"contents": [{"role": "user", "parts": [{"text": consigne(faits, actus)}]}]}).encode()
-    req = urllib.request.Request(url, data=corps, method="POST", headers={
-        "Content-Type": "application/json", "x-goog-api-key": os.environ["GEMINI_API_KEY"]})
-    try:
-        with urllib.request.urlopen(req, timeout=120) as r:
-            rep = json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        detail = ""
+    for model in dict.fromkeys(modeles):
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        req = urllib.request.Request(url, data=corps, method="POST", headers={
+            "Content-Type": "application/json", "x-goog-api-key": os.environ["GEMINI_API_KEY"]})
         try:
-            detail = json.loads(e.read()).get("error", {}).get("message", "")
-        except Exception:  # noqa: BLE001
-            pass
-        log(f"Analyse Gemini : erreur API {e.code} {detail[:200]}")
-        return None
-    except Exception as e:  # noqa: BLE001
-        log(f"Analyse Gemini : connexion impossible ({e}).")
-        return None
-    try:
-        parts = rep["candidates"][0]["content"]["parts"]
-        texte = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
-    except (KeyError, IndexError):
-        log(f"Analyse Gemini : réponse vide ({rep.get('promptFeedback', '')}).")
-        return None
-    log("Analyse IA rédigée par Gemini.")
-    return {"texte": texte, "modele": rep.get("modelVersion", model)}
+            with urllib.request.urlopen(req, timeout=90) as r:
+                rep = json.loads(r.read())
+            parts = rep["candidates"][0]["content"]["parts"]
+            texte = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+            if not texte:
+                raise ValueError("réponse vide")
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                detail = json.loads(e.read()).get("error", {}).get("message", "")
+            except Exception:  # noqa: BLE001
+                pass
+            log(f"Analyse Gemini ({model}) : erreur API {e.code} {detail[:200]}")
+            continue
+        except Exception as e:  # noqa: BLE001
+            log(f"Analyse Gemini ({model}) : échec ({e}).")
+            continue
+        log(f"Analyse IA rédigée par Gemini ({model}).")
+        return {"texte": texte, "modele": rep.get("modelVersion", model)}
+    return None
 
 
 def analyse_claude(faits: dict, actus: list[dict]) -> dict | None:
