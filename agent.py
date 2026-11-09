@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -216,35 +217,33 @@ def faits_cles(wb: dict) -> dict:
     }
 
 
-def charger_cle_api() -> None:
-    """Trouve ANTHROPIC_API_KEY même si elle a été définie après le lancement du serveur :
+def charger_cles_api() -> None:
+    """Trouve les clés API même si elles ont été définies après le lancement du serveur :
     fichier .env du projet, puis variables utilisateur Windows (setx)."""
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return
     env = ROOT / ".env"
+    valeurs = {}
     if env.exists():
-        for ligne in env.read_text(encoding="utf-8").splitlines():
-            if ligne.strip().startswith("ANTHROPIC_API_KEY="):
-                os.environ["ANTHROPIC_API_KEY"] = ligne.split("=", 1)[1].strip().strip('"\'')
-                return
-    if os.name == "nt":
-        try:
-            import winreg
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
-                os.environ["ANTHROPIC_API_KEY"] = winreg.QueryValueEx(k, "ANTHROPIC_API_KEY")[0]
-        except OSError:
-            pass
+        for ligne in env.read_text(encoding="utf-8-sig").splitlines():
+            if "=" in ligne and not ligne.strip().startswith("#"):
+                k, v = ligne.split("=", 1)
+                valeurs[k.strip()] = v.strip().strip('"\'')
+    for nom in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "CLAUDE_MODEL", "GEMINI_MODEL"):
+        if os.environ.get(nom):
+            continue
+        if valeurs.get(nom):
+            os.environ[nom] = valeurs[nom]
+        elif os.name == "nt":
+            try:
+                import winreg
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
+                    os.environ[nom] = winreg.QueryValueEx(k, nom)[0]
+            except OSError:
+                pass
 
 
-def analyse_claude(faits: dict, actus: list[dict]) -> dict | None:
-    charger_cle_api()
-    try:
-        import anthropic
-    except ImportError:
-        log("Analyse IA ignorée : `pip install anthropic` pour l'activer.")
-        return None
+def consigne(faits: dict, actus: list[dict]) -> str:
     titres = "\n".join(f"- [{a['journal']}, {(a['date'] or '')[:10]}] {a['titre']}" for a in actus[:30])
-    prompt = (
+    return (
         "Tu es un analyste en développement économique. À partir des données de la Banque mondiale "
         "et des titres de presse récents ci-dessous, rédige en français une note de synthèse "
         "(150 à 220 mots) sur la pauvreté en Afrique : niveau actuel et tendance, pays les plus touchés, "
@@ -253,6 +252,58 @@ def analyse_claude(faits: dict, actus: list[dict]) -> dict | None:
         f"DONNÉES BANQUE MONDIALE (JSON) :\n{json.dumps(faits, ensure_ascii=False)}\n\n"
         f"TITRES DE PRESSE RÉCENTS :\n{titres}"
     )
+
+
+def analyse_ia(faits: dict, actus: list[dict]) -> dict | None:
+    """Claude si ANTHROPIC_API_KEY est définie, sinon Gemini si GEMINI_API_KEY l'est."""
+    charger_cles_api()
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        res = analyse_claude(faits, actus)
+        if res:
+            return res
+    if os.environ.get("GEMINI_API_KEY"):
+        return analyse_gemini(faits, actus)
+    log("Analyse IA ignorée : aucune clé (ANTHROPIC_API_KEY ou GEMINI_API_KEY) dans .env.")
+    return None
+
+
+def analyse_gemini(faits: dict, actus: list[dict]) -> dict | None:
+    model = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    corps = json.dumps({"contents": [{"role": "user", "parts": [{"text": consigne(faits, actus)}]}]}).encode()
+    req = urllib.request.Request(url, data=corps, method="POST", headers={
+        "Content-Type": "application/json", "x-goog-api-key": os.environ["GEMINI_API_KEY"]})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            rep = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = json.loads(e.read()).get("error", {}).get("message", "")
+        except Exception:  # noqa: BLE001
+            pass
+        log(f"Analyse Gemini : erreur API {e.code} {detail[:200]}")
+        return None
+    except Exception as e:  # noqa: BLE001
+        log(f"Analyse Gemini : connexion impossible ({e}).")
+        return None
+    try:
+        parts = rep["candidates"][0]["content"]["parts"]
+        texte = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+    except (KeyError, IndexError):
+        log(f"Analyse Gemini : réponse vide ({rep.get('promptFeedback', '')}).")
+        return None
+    log("Analyse IA rédigée par Gemini.")
+    return {"texte": texte, "modele": rep.get("modelVersion", model)}
+
+
+def analyse_claude(faits: dict, actus: list[dict]) -> dict | None:
+    try:
+        import anthropic
+    except ImportError:
+        log("Analyse IA ignorée : `pip install anthropic` pour l'activer.")
+        return None
+    prompt = consigne(faits, actus)
     model = os.environ.get("CLAUDE_MODEL", "claude-opus-5-5")
     try:
         client = anthropic.Anthropic()
@@ -303,7 +354,7 @@ def executer() -> dict:
         "banque_mondiale": wb,
         "faits": faits,
         "actualites": actus,
-        "analyse": analyse_claude(faits, actus),
+        "analyse": analyse_ia(faits, actus),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     tmp = OUT.with_suffix(".tmp")

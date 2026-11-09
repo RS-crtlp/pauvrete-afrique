@@ -11,7 +11,11 @@ Double-cliquer sur `lancer.bat`, ou :
 
 ## Activer l'analyse IA (facultatif)
 
-    pip install anthropic
-    setx ANTHROPIC_API_KEY "sk-ant-..."
+Créer un fichier `.env` à la racine du projet (il est exclu de Git) avec **une** de ces lignes :
 
-Modèle par défaut : `claude-opus-5-5` (variable `CLAUDE_MODEL` pour changer). Le repli automatique côté serveur (`fallbacks: "default"`) est activé en cas de refus.
+    GEMINI_API_KEY=...        # clé gratuite : https://aistudio.google.com/apikey
+    ANTHROPIC_API_KEY=sk-ant-...   # https://console.anthropic.com (nécessite aussi : pip install anthropic)
+
+Si les deux sont présentes, Claude est utilisé en priorité et Gemini sert de secours.
+Modèles par défaut : `gemini-3.8-flash` (`GEMINI_MODEL` pour changer) et `claude-opus-5-5` (`CLAUDE_MODEL`).
+Pas besoin de redémarrer le serveur : cliquer sur « Actualiser » suffit.

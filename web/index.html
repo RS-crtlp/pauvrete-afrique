@@ -250,11 +250,11 @@ function renderIA() {
   const a = DATA.analyse;
   if (!a) {
     $("#iaSub").textContent = "Non activée";
-    $("#ia").innerHTML = `<p class="sub">Pour que l'agent rédige une analyse avec Claude, installez le SDK
-      (<code>pip install anthropic</code>) et définissez la variable <code>ANTHROPIC_API_KEY</code>, puis relancez le serveur.</p>`;
+    $("#ia").innerHTML = `<p class="sub">Pour activer l'analyse, ajoutez une clé dans le fichier <code>.env</code> du projet :
+      <code>GEMINI_API_KEY=…</code> (Google AI Studio) ou <code>ANTHROPIC_API_KEY=…</code> (Claude), puis cliquez sur « Actualiser ».</p>`;
     return;
   }
-  $("#iaSub").innerHTML = `Rédigée par <span class="tag">${esc(a.modele)}</span> à partir des données et des titres ci-contre`;
+  $("#iaSub").innerHTML = `Rédigée par <span class="tag">${esc(a.modele)}</span> à partir des données et des titres de presse`;
   // Markdown minimal : paragraphes, listes, gras
   const html = esc(a.texte).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").split(/\n{2,}/).map(b =>
     /^\s*[-*] /m.test(b) ? "<ul>" + b.split("\n").filter(l => l.trim()).map(l => "<li>" + l.replace(/^\s*[-*] /, "") + "</li>").join("") + "</ul>" : "<p>" + b.replace(/\n/g, "<br>") + "</p>").join("");
