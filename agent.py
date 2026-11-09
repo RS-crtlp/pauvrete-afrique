@@ -267,19 +267,41 @@ def analyse_ia(faits: dict, actus: list[dict]) -> dict | None:
     return None
 
 
-def analyse_gemini(faits: dict, actus: list[dict]) -> dict | None:
-    # Modèle choisi (GEMINI_MODEL) d'abord, puis repli sur Flash-Lite, rapide et disponible en offre gratuite
+_recherche_google_ko_jusqua = [0.0]
+
+
+def appel_gemini(prompt: str, recherche_google: bool = False, timeout: int = 90) -> dict | None:
+    """Appelle Gemini (modèle GEMINI_MODEL puis repli sur Flash-Lite).
+    Avec recherche_google=True, Gemini peut chercher sur Google ; on renvoie alors aussi les sources."""
+    charger_cles_api()
+    if not os.environ.get("GEMINI_API_KEY"):
+        return None
     modeles = [m for m in (os.environ.get("GEMINI_MODEL"), "gemini-3.5-flash-lite") if m]
-    corps = json.dumps({"contents": [{"role": "user", "parts": [{"text": consigne(faits, actus)}]}]}).encode()
-    for model in dict.fromkeys(modeles):
+    recherche_google = recherche_google and time.time() > _recherche_google_ko_jusqua[0]
+    essais = [(m, outils) for m in dict.fromkeys(modeles) for outils in ((True, False) if recherche_google else (False,))]
+    for model, outils in essais:
+        if outils and time.time() < _recherche_google_ko_jusqua[0]:
+            continue
+        corps = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
+        if outils:
+            corps["tools"] = [{"google_search": {}}]
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        req = urllib.request.Request(url, data=corps, method="POST", headers={
+        req = urllib.request.Request(url, data=json.dumps(corps).encode(), method="POST", headers={
             "Content-Type": "application/json", "x-goog-api-key": os.environ["GEMINI_API_KEY"]})
         try:
-            with urllib.request.urlopen(req, timeout=90) as r:
-                rep = json.loads(r.read())
-            parts = rep["candidates"][0]["content"]["parts"]
-            texte = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+            for tentative in range(3):  # réessaie sur les erreurs réseau passagères (DNS, coupure)
+                try:
+                    with urllib.request.urlopen(req, timeout=timeout) as r:
+                        rep = json.loads(r.read())
+                    break
+                except urllib.error.HTTPError:
+                    raise
+                except urllib.error.URLError:
+                    if tentative == 2:
+                        raise
+                    time.sleep(2)
+            cand = rep["candidates"][0]
+            texte = "".join(p.get("text", "") for p in cand["content"]["parts"] if not p.get("thought")).strip()
             if not texte:
                 raise ValueError("réponse vide")
         except urllib.error.HTTPError as e:
@@ -288,14 +310,64 @@ def analyse_gemini(faits: dict, actus: list[dict]) -> dict | None:
                 detail = json.loads(e.read()).get("error", {}).get("message", "")
             except Exception:  # noqa: BLE001
                 pass
-            log(f"Analyse Gemini ({model}) : erreur API {e.code} {detail[:200]}")
+            log(f"Gemini ({model}{', recherche Google' if outils else ''}) : erreur API {e.code} {detail[:200]}")
+            if outils and e.code in (400, 403, 429):
+                # recherche Google non incluse dans l'offre : on ne la retente pas avant 1 h
+                _recherche_google_ko_jusqua[0] = time.time() + 3600
             continue
         except Exception as e:  # noqa: BLE001
-            log(f"Analyse Gemini ({model}) : échec ({e}).")
+            log(f"Gemini ({model}{', recherche Google' if outils else ''}) : échec ({e}).")
             continue
-        log(f"Analyse IA rédigée par Gemini ({model}).")
-        return {"texte": texte, "modele": rep.get("modelVersion", model)}
+        sources = []
+        for c in cand.get("groundingMetadata", {}).get("groundingChunks", []):
+            web = c.get("web") or {}
+            if web.get("uri") and web["uri"] not in [s["lien"] for s in sources]:
+                sources.append({"titre": web.get("title") or web["uri"], "lien": web["uri"]})
+        return {"texte": texte, "modele": rep.get("modelVersion", model), "sources": sources,
+                "recherche_google": outils}
     return None
+
+
+def analyse_gemini(faits: dict, actus: list[dict]) -> dict | None:
+    res = appel_gemini(consigne(faits, actus))
+    if res:
+        log(f"Analyse IA rédigée par Gemini ({res['modele']}).")
+        return {"texte": res["texte"], "modele": res["modele"]}
+    return None
+
+
+def repondre_question(question: str) -> dict:
+    """Répond à une question libre à partir des données collectées (+ recherche Google si besoin)."""
+    question = question.strip()[:500]
+    if not question:
+        return {"erreur": "Question vide."}
+    try:
+        data = json.loads(OUT.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {"erreur": "Données pas encore disponibles, réessayez dans un instant."}
+    noms = {"SI.POV.DDAY": "pauvrete_3usd_%", "SI.POV.LMIC": "pauvrete_4.20usd_%", "SI.POV.UMIC": "pauvrete_8.30usd_%",
+            "SI.POV.NAHC": "pauvrete_seuil_national_%", "SI.POV.GINI": "gini"}
+    pays = {p["nom"]: {noms[i]: dernier(p.get(i)) for i in noms if p.get(i)}
+            for p in data["banque_mondiale"]["pays"].values()}
+    regions = {r["nom"]: {noms[i]: r.get(i, [])[-12:] for i in ("SI.POV.DDAY", "SI.POV.LMIC", "SI.POV.UMIC") if r.get(i)}
+               for r in data["banque_mondiale"]["regions"].values()}
+    actus = "\n".join(f"- [{a['journal']}, {(a['date'] or '')[:10]}] {a['titre']} — {a['lien']}"
+                      for a in data["actualites"])
+    prompt = (
+        "Tu es l'assistant d'un tableau de bord sur la pauvreté en Afrique. Réponds en français, de façon "
+        "claire et concise (moins de 200 mots), en Markdown simple. Appuie-toi d'abord sur les données de la "
+        "Banque mondiale ci-dessous (valeurs au format [année, valeur], seuils en dollars PPA 2021) et cite "
+        "l'année des chiffres. Utilise la recherche Google seulement pour des informations récentes absentes "
+        "de ces données. N'invente aucun chiffre ; si tu ne sais pas, dis-le.\n\n"
+        f"DERNIÈRES VALEURS PAR PAYS :\n{json.dumps(pays, ensure_ascii=False)}\n\n"
+        f"SÉRIES RÉGIONALES (12 dernières années) :\n{json.dumps(regions, ensure_ascii=False)}\n\n"
+        f"ACTUALITÉS RÉCENTES :\n{actus}\n\n"
+        f"QUESTION : {question}"
+    )
+    res = appel_gemini(prompt, recherche_google=True, timeout=60)
+    if not res:
+        return {"erreur": "Gemini n'a pas pu répondre (clé absente ou service indisponible)."}
+    return res
 
 
 def analyse_claude(faits: dict, actus: list[dict]) -> dict | None:

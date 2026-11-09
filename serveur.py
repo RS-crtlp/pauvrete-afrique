@@ -51,6 +51,13 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
+        if self.path.startswith("/api/question"):
+            try:
+                n = min(int(self.headers.get("Content-Length", 0)), 10_000)
+                question = json.loads(self.rfile.read(n) or b"{}").get("question", "")
+            except (ValueError, json.JSONDecodeError):
+                return self._json({"erreur": "Requête invalide."})
+            return self._json(agent.repondre_question(str(question)))
         if self.path.startswith("/api/actualiser"):
             if etat["en_cours"]:
                 return self._json({"ok": False, "message": "Mise à jour déjà en cours"})
@@ -59,9 +66,9 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_error(404)
 
     def _json(self, obj):
-        corps = json.dumps(obj).encode()
+        corps = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(corps)))
         self.end_headers()
         self.wfile.write(corps)
