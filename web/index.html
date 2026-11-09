@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pauvreté en Afrique</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  color-scheme:light;
+  --bg:#f4f3ef; --surface:#fcfcfb; --border:#e3e1da;
+  --text:#0b0b0b; --text-2:#52514e; --muted:#8a8984; --grid:#ebe9e3;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --accent:#2a78d6;
+  --seq-lo:#86b6ef; --seq-hi:#104281;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#111110; --surface:#1a1a19; --border:#2e2d2a;
+    --text:#f0efec; --text-2:#c3c2b7; --muted:#8f8e86; --grid:#2a2927;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --accent:#5598e7;
+    --seq-lo:#184f95; --seq-hi:#9ec5f4;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1200px;margin:0 auto;padding:24px 16px 48px}
+header{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-end;justify-content:space-between;margin-bottom:20px}
+h1{font-size:26px;margin:0;letter-spacing:-.01em}
+h2{font-size:16px;margin:0 0 4px}
+.sub{color:var(--text-2);font-size:13px}
+.maj{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-2)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--s3)}
+.dot.busy{background:var(--s2);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.3}}
+button,select,input{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 10px}
+button{cursor:pointer}button:hover{border-color:var(--accent)}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;min-width:0}
+.c12{grid-column:span 12}.c8{grid-column:span 8}.c7{grid-column:span 7}.c6{grid-column:span 6}.c5{grid-column:span 5}.c4{grid-column:span 4}.c3{grid-column:span 3}
+@media(max-width:900px){.c8,.c7,.c6,.c5,.c4{grid-column:span 12}.c3{grid-column:span 6}}
+.kpi .v{font-size:32px;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.kpi .l{color:var(--text-2);font-size:13px}
+.kpi .n{color:var(--muted);font-size:12px;margin-top:4px}
+.head{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.chart{position:relative;height:300px}
+.chart.tall{height:820px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text-2);margin-top:6px}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:6px}
+.news{list-style:none;margin:0;padding:0;max-height:820px;overflow:auto}
+.news li{padding:10px 0;border-bottom:1px solid var(--border)}
+.news a{color:var(--text);text-decoration:none;font-weight:550}
+.news a:hover{color:var(--accent);text-decoration:underline}
+.news .meta{font-size:12px;color:var(--muted);margin-top:2px}
+.news .meta b{color:var(--text-2);font-weight:600}
+.news p{margin:4px 0 0;font-size:13px;color:var(--text-2)}
+.ia{white-space:normal}.ia p{margin:.4em 0}.ia ul{margin:.4em 0;padding-left:20px}
+.tag{font-size:11px;border:1px solid var(--border);border-radius:99px;padding:1px 8px;color:var(--text-2)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{padding:4px 6px;border-bottom:1px solid var(--border);text-align:left}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+details summary{cursor:pointer;color:var(--text-2);font-size:13px;margin-top:8px}
+footer{margin-top:24px;color:var(--muted);font-size:12px}
+footer a{color:var(--text-2)}
+.err{color:var(--s2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>La pauvreté en Afrique</h1>
+      <div class="sub">Données de la Banque mondiale (Poverty and Inequality Platform) · actualités de la presse · mise à jour automatique</div>
+    </div>
+    <div class="maj">
+      <span class="dot" id="dot"></span>
+      <span id="maj">Chargement…</span>
+      <button id="btnMaj" title="Relancer l'agent maintenant">Actualiser</button>
+    </div>
+  </header>
+
+  <section class="grid" id="kpis"></section>
+
+  <section class="grid" style="margin-top:16px">
+    <div class="card c7">
+      <div class="head">
+        <div><h2>Évolution du taux de pauvreté</h2><div class="sub">% de la population vivant sous le seuil choisi</div></div>
+        <select id="seuil">
+          <option value="SI.POV.DDAY">3,00 $/jour (extrême)</option>
+          <option value="SI.POV.LMIC">4,20 $/jour</option>
+          <option value="SI.POV.UMIC">8,30 $/jour</option>
+        </select>
+      </div>
+      <div class="chart"><canvas id="cTendance"></canvas></div>
+      <div class="legend" id="legTendance"></div>
+    </div>
+    <div class="card c5">
+      <div class="head"><div><h2>Nombre de personnes en extrême pauvreté</h2><div class="sub">Afrique subsaharienne, millions (3,00 $/jour)</div></div></div>
+      <div class="chart"><canvas id="cNombre"></canvas></div>
+    </div>
+
+    <div class="card c7">
+      <div class="head">
+        <div><h2>Classement des pays</h2><div class="sub">Dernière année disponible pour chaque pays</div></div>
+        <select id="indPays">
+          <option value="SI.POV.DDAY">Pauvreté à 3,00 $/jour (%)</option>
+          <option value="SI.POV.LMIC">Pauvreté à 4,20 $/jour (%)</option>
+          <option value="SI.POV.UMIC">Pauvreté à 8,30 $/jour (%)</option>
+          <option value="SI.POV.NAHC">Pauvreté, seuil national (%)</option>
+          <option value="SI.POV.GINI">Indice de Gini (inégalités)</option>
+        </select>
+      </div>
+      <div class="chart tall"><canvas id="cPays"></canvas></div>
+      <details><summary>Voir le tableau</summary><table id="tPays"></table></details>
+    </div>
+
+    <div class="card c5">
+      <div class="head"><div><h2>Actualités récentes</h2><div class="sub" id="nbActus"></div></div>
+        <input id="filtre" type="search" placeholder="Filtrer…" style="width:140px"></div>
+      <ul class="news" id="news"></ul>
+    </div>
+
+    <div class="card c6">
+      <div class="head">
+        <div><h2>Profil d'un pays</h2><div class="sub">Taux de pauvreté selon les trois seuils internationaux</div></div>
+        <select id="pays"></select>
+      </div>
+      <div class="chart"><canvas id="cProfil"></canvas></div>
+      <div class="legend" id="legProfil"></div>
+    </div>
+
+    <div class="card c6">
+      <div class="head"><div><h2>Analyse de l'agent IA</h2><div class="sub" id="iaSub"></div></div></div>
+      <div class="ia" id="ia"></div>
+    </div>
+  </section>
+
+  <footer>
+    Source : <a href="https://data.worldbank.org/topic/poverty" target="_blank" rel="noopener">Banque mondiale – World Development Indicators</a>
+    (seuils en dollars PPA 2021). Les estimations pays datent d'années différentes selon les enquêtes ménages.
+    Actualités : Google Actualités, Le Monde Afrique, RFI, Jeune Afrique, BBC Africa.
+  </footer>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const fmt = (n, d = 1) => n == null ? "–" : n.toLocaleString("fr-FR", { maximumFractionDigits: d, minimumFractionDigits: d });
+let DATA = null, charts = {};
+
+function baseOptions(extra = {}) {
+  return {
+    responsive: true, maintainAspectRatio: false, animation: false,
+    interaction: { mode: "index", intersect: false },
+    plugins: { legend: { display: false },
+      tooltip: { backgroundColor: css("--surface"), titleColor: css("--text"), bodyColor: css("--text-2"),
+                 borderColor: css("--border"), borderWidth: 1, padding: 10, boxPadding: 4 } },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: css("--muted"), maxRotation: 0, autoSkipPadding: 16 }, border: { color: css("--border") } },
+      y: { grid: { color: css("--grid") }, ticks: { color: css("--muted") }, border: { display: false }, beginAtZero: true },
+    }, ...extra,
+  };
+}
+function draw(id, config) { charts[id]?.destroy(); charts[id] = new Chart($("#" + id), config); }
+function line(label, serie, color, dash) {
+  return { label, data: serie.map(([x, y]) => ({ x, y })), borderColor: color, backgroundColor: color,
+           borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, borderDash: dash || [], tension: .2, spanGaps: true };
+}
+function legend(el, items) { $(el).innerHTML = items.map(([l, c, d]) => `<span><i style="background:${c};${d ? "opacity:.6" : ""}"></i>${l}</span>`).join(""); }
+const last = s => s?.length ? s[s.length - 1] : null;
+
+// ---------------- KPIs
+function renderKpis() {
+  const f = DATA.faits, ssf = DATA.banque_mondiale.regions.SSF;
+  const d1990 = f.ssf_3usd && f.ssf_3usd_1990 ? f.ssf_3usd[1] - f.ssf_3usd_1990[1] : null;
+  const k = [
+    [fmt(f.ssf_3usd?.[1]) + " %", "Taux d'extrême pauvreté, Afrique subsaharienne", `< 3,00 $/jour · ${f.ssf_3usd?.[0] ?? ""}`],
+    [fmt(f.ssf_nb_pauvres_millions?.[1], 0) + " M", "Personnes en extrême pauvreté", `Afrique subsaharienne · ${f.ssf_nb_pauvres_millions?.[0] ?? ""}`],
+    [fmt(f.monde_3usd?.[1]) + " %", "Taux d'extrême pauvreté, Monde", `pour comparaison · ${f.monde_3usd?.[0] ?? ""}`],
+    [(d1990 > 0 ? "+" : "") + fmt(d1990) + " pts", "Évolution du taux depuis 1990", `${fmt(f.ssf_3usd_1990?.[1])} % en 1990`],
+  ];
+  $("#kpis").innerHTML = k.map(([v, l, n]) => `<div class="card kpi c3"><div class="v">${v}</div><div class="l">${l}</div><div class="n">${n}</div></div>`).join("");
+}
+
+// ---------------- Tendance régionale
+function renderTendance() {
+  const ind = $("#seuil").value, R = DATA.banque_mondiale.regions;
+  const series = [["Afrique subsaharienne", R.SSF, css("--s1")], ["Moyen-Orient & Afrique du Nord", R.MEA, css("--s2")], ["Monde", R.WLD, css("--s3")]]
+    .filter(([, r]) => r?.[ind]?.length);
+  draw("cTendance", { type: "line", data: { datasets: series.map(([l, r, c]) => line(l, r[ind], c)) },
+    options: baseOptions({ scales: { ...baseOptions().scales, x: { ...baseOptions().scales.x, type: "linear", ticks: { ...baseOptions().scales.x.ticks, callback: v => v } },
+      y: { ...baseOptions().scales.y, ticks: { color: css("--muted"), callback: v => v + " %" } } },
+      plugins: { ...baseOptions().plugins, tooltip: { ...baseOptions().plugins.tooltip, callbacks: { title: i => i[0]?.parsed.x, label: c => ` ${c.dataset.label} : ${fmt(c.parsed.y)} %` } } } }) });
+  legend("#legTendance", series.map(([l, , c]) => [l, c]));
+}
+
+// ---------------- Nombre de pauvres
+function renderNombre() {
+  const s = DATA.banque_mondiale.regions.SSF.nb_pauvres_millions || [];
+  draw("cNombre", { type: "bar", data: { labels: s.map(d => d[0]),
+      datasets: [{ data: s.map(d => d[1]), backgroundColor: css("--s1"), borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: "start", categoryPercentage: .85, barPercentage: .9 }] },
+    options: baseOptions({ plugins: { ...baseOptions().plugins, tooltip: { ...baseOptions().plugins.tooltip, callbacks: { label: c => ` ${fmt(c.parsed.y, 0)} millions de personnes` } } } }) });
+}
+
+// ---------------- Classement pays
+function renderPays() {
+  const ind = $("#indPays").value, pct = ind !== "SI.POV.GINI";
+  const rows = Object.entries(DATA.banque_mondiale.pays).map(([c, p]) => ({ c, nom: p.nom, d: last(p[ind]) }))
+    .filter(r => r.d).sort((a, b) => b.d[1] - a.d[1]);
+  const max = Math.max(...rows.map(r => r.d[1]));
+  // Couleur séquentielle (une teinte) : plus foncé = plus élevé
+  const lo = hex(css("--seq-lo")), hi = hex(css("--seq-hi"));
+  const col = v => { const t = v / max; return `rgb(${lo.map((a, i) => Math.round(a + (hi[i] - a) * t)).join(",")})`; };
+  $("#cPays").parentElement.style.height = Math.max(300, rows.length * 16 + 40) + "px";
+  draw("cPays", { type: "bar", data: { labels: rows.map(r => r.nom),
+      datasets: [{ data: rows.map(r => r.d[1]), backgroundColor: rows.map(r => col(r.d[1])), borderRadius: { topRight: 4, bottomRight: 4 }, borderSkipped: "start", barPercentage: .85, categoryPercentage: .9 }] },
+    options: baseOptions({ indexAxis: "y", interaction: { mode: "nearest", axis: "y", intersect: false },
+      scales: { x: { grid: { color: css("--grid") }, ticks: { color: css("--muted"), callback: v => pct ? v + " %" : v }, border: { display: false }, beginAtZero: true, position: "top" },
+                y: { grid: { display: false }, ticks: { color: css("--text-2"), autoSkip: false, font: { size: 11 } }, border: { color: css("--border") } } },
+      plugins: { ...baseOptions().plugins, tooltip: { ...baseOptions().plugins.tooltip, callbacks: { label: c => ` ${fmt(c.parsed.x)}${pct ? " %" : ""} (année ${rows[c.dataIndex].d[0]})` } } },
+      onClick: (e, els) => { if (els[0]) { $("#pays").value = rows[els[0].index].c; renderProfil(); $("#pays").scrollIntoView({ behavior: "smooth", block: "center" }); } } }) });
+  $("#tPays").innerHTML = `<tr><th>Pays</th><th class="num">Valeur</th><th class="num">Année</th></tr>` +
+    rows.map(r => `<tr><td>${r.nom}</td><td class="num">${fmt(r.d[1])}${pct ? " %" : ""}</td><td class="num">${r.d[0]}</td></tr>`).join("");
+}
+function hex(h) { h = h.replace("#", ""); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)); }
+
+// ---------------- Profil pays
+function renderProfil() {
+  const p = DATA.banque_mondiale.pays[$("#pays").value]; if (!p) return;
+  const s = [["3,00 $/jour", p["SI.POV.DDAY"], css("--s1")], ["4,20 $/jour", p["SI.POV.LMIC"], css("--s2")], ["8,30 $/jour", p["SI.POV.UMIC"], css("--s3")]].filter(x => x[1]?.length);
+  const o = baseOptions();
+  draw("cProfil", { type: "line", data: { datasets: s.map(([l, d, c]) => ({ ...line(l, d, c), pointRadius: 4 })) },
+    options: baseOptions({ scales: { x: { ...o.scales.x, type: "linear", ticks: { ...o.scales.x.ticks, callback: v => v } }, y: { ...o.scales.y, max: 100, ticks: { color: css("--muted"), callback: v => v + " %" } } },
+      plugins: { ...o.plugins, tooltip: { ...o.plugins.tooltip, callbacks: { title: i => i[0]?.parsed.x, label: c => ` ${c.dataset.label} : ${fmt(c.parsed.y)} %` } } } }) });
+  legend("#legProfil", s.length ? s.map(([l, , c]) => [l, c]) : [["Aucune enquête disponible pour ce pays", css("--muted")]]);
+}
+
+// ---------------- Actualités
+function renderNews() {
+  const q = $("#filtre").value.toLowerCase(), A = DATA.actualites.filter(a => !q || (a.titre + a.journal + a.resume).toLowerCase().includes(q));
+  $("#nbActus").textContent = `${DATA.actualites.length} articles des 30 derniers jours`;
+  $("#news").innerHTML = A.map(a => `<li><a href="${esc(a.lien)}" target="_blank" rel="noopener">${esc(a.titre)}</a>
+    <div class="meta"><b>${esc(a.journal)}</b> · ${a.date ? new Date(a.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : ""}</div>
+    ${a.resume ? `<p>${esc(a.resume)}</p>` : ""}</li>`).join("") || "<li class='sub'>Aucun article.</li>";
+}
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+// ---------------- Analyse IA
+function renderIA() {
+  const a = DATA.analyse;
+  if (!a) {
+    $("#iaSub").textContent = "Non activée";
+    $("#ia").innerHTML = `<p class="sub">Pour que l'agent rédige une analyse avec Claude, installez le SDK
+      (<code>pip install anthropic</code>) et définissez la variable <code>ANTHROPIC_API_KEY</code>, puis relancez le serveur.</p>`;
+    return;
+  }
+  $("#iaSub").innerHTML = `Rédigée par <span class="tag">${esc(a.modele)}</span> à partir des données et des titres ci-contre`;
+  // Markdown minimal : paragraphes, listes, gras
+  const html = esc(a.texte).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").split(/\n{2,}/).map(b =>
+    /^\s*[-*] /m.test(b) ? "<ul>" + b.split("\n").filter(l => l.trim()).map(l => "<li>" + l.replace(/^\s*[-*] /, "") + "</li>").join("") + "</ul>" : "<p>" + b.replace(/\n/g, "<br>") + "</p>").join("");
+  $("#ia").innerHTML = html;
+}
+
+// ---------------- Chargement & actualisation automatique
+async function charger() {
+  try {
+    const r = await fetch("data.json?t=" + Date.now()); if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    if (DATA && d.maj === DATA.maj) return;  // rien de neuf
+    DATA = d;
+    if (!$("#pays").options.length) {
+      $("#pays").innerHTML = Object.entries(DATA.banque_mondiale.pays).sort((a, b) => a[1].nom.localeCompare(b[1].nom, "fr"))
+        .map(([c, p]) => `<option value="${c}">${p.nom}</option>`).join("");
+      $("#pays").value = "NGA";
+    }
+    renderAll();
+  } catch (e) { $("#maj").innerHTML = `<span class="err">Données indisponibles – lancez <code>python serveur.py</code></span>`; }
+}
+function renderAll() {
+  renderKpis(); renderTendance(); renderNombre(); renderPays(); renderProfil(); renderNews(); renderIA();
+  $("#maj").textContent = "Mis à jour le " + new Date(DATA.maj).toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "short" });
+}
+async function etat() {
+  try { const e = await (await fetch("/api/etat")).json(); $("#dot").classList.toggle("busy", e.en_cours);
+        $("#btnMaj").disabled = e.en_cours; $("#btnMaj").textContent = e.en_cours ? "Mise à jour…" : "Actualiser";
+        if (!e.en_cours) charger(); } catch { /* page ouverte sans le serveur */ }
+}
+$("#btnMaj").onclick = async () => { await fetch("/api/actualiser", { method: "POST" }).catch(() => {}); etat(); };
+$("#seuil").onchange = renderTendance; $("#indPays").onchange = renderPays; $("#pays").onchange = renderProfil; $("#filtre").oninput = renderNews;
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => DATA && renderAll());
+
+charger();
+setInterval(etat, 15000);              // état de l'agent toutes les 15 s
+setInterval(charger, 5 * 60 * 1000);   // nouvelles données toutes les 5 min
+</script>
+</body>
+</html>
