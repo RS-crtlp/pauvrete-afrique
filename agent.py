@@ -216,7 +216,28 @@ def faits_cles(wb: dict) -> dict:
     }
 
 
+def charger_cle_api() -> None:
+    """Trouve ANTHROPIC_API_KEY même si elle a été définie après le lancement du serveur :
+    fichier .env du projet, puis variables utilisateur Windows (setx)."""
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return
+    env = ROOT / ".env"
+    if env.exists():
+        for ligne in env.read_text(encoding="utf-8").splitlines():
+            if ligne.strip().startswith("ANTHROPIC_API_KEY="):
+                os.environ["ANTHROPIC_API_KEY"] = ligne.split("=", 1)[1].strip().strip('"\'')
+                return
+    if os.name == "nt":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
+                os.environ["ANTHROPIC_API_KEY"] = winreg.QueryValueEx(k, "ANTHROPIC_API_KEY")[0]
+        except OSError:
+            pass
+
+
 def analyse_claude(faits: dict, actus: list[dict]) -> dict | None:
+    charger_cle_api()
     try:
         import anthropic
     except ImportError:
